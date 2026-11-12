@@ -69,10 +69,10 @@ def profile_native(directory, command, expected, perf):
     reporting = None
     if recording == 0:
         reporting = run_process([str(perf), 'report', '--stdio', '-i', 'native.data',
-                                 '--no-children', '--comms=obscura', '--sort=dso,symbol'],
+                                 '--no-children', '--sort=dso,symbol'],
                                 directory, 'native-summary')
     return {'record_exit': recording, 'report_exit': reporting,
-            'event': 'cpu-clock:u', 'filter': 'obscura processes only'}
+            'event': 'cpu-clock:u', 'filter': 'all runtime threads and the profile worker'}
 
 
 def main():
