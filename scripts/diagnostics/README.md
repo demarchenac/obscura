@@ -9,7 +9,8 @@ works before this workflow is registered on the default branch.
 
 - Frozen base: `74b4bec959117b9da309f113bb2b08aea39539ac`.
 - Frozen SVG candidate: `e90e0f3afb26bf5caa0407c23f9eeb5290e0deaf`.
-- Native Ubuntu 22.04; Rust 1.99.1; original release flags and nextest command.
+- Native Ubuntu 22.04; Rust 1.99.1 and nextest 0.9.143 from the original log;
+  original release flags and nextest command.
 - Two builds start without Cargo artifacts. The cold base seeds a run-specific
   dependency cache; both warm builds restore that same cache using the pinned
   upstream cache action and V8 repair step. This reconstructs a warm cache; it
