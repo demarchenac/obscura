@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the frozen CI evaluator with only table-rows-hot and more samples."""
+"""Run one frozen CI scenario with more samples and unchanged budgets."""
 import argparse
 import importlib.util
 from pathlib import Path
@@ -13,6 +13,7 @@ def main():
     parser.add_argument('--candidate', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--rounds', type=int, default=50)
+    parser.add_argument('--scenario', default='table-rows-hot')
     arguments = parser.parse_args()
     if arguments.rounds < 1:
         parser.error('--rounds must be positive')
@@ -20,7 +21,9 @@ def main():
     evaluator = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(evaluator)
     evaluator.ROUNDS = arguments.rounds
-    evaluator.SCENARIOS = {'table-rows-hot': evaluator.SCENARIOS['table-rows-hot']}
+    if arguments.scenario not in evaluator.SCENARIOS:
+        parser.error(f'unknown scenario: {arguments.scenario}')
+    evaluator.SCENARIOS = {arguments.scenario: evaluator.SCENARIOS[arguments.scenario]}
     sys.argv = [str(arguments.evaluator), '--base', str(arguments.base.resolve()),
                 '--candidate', str(arguments.candidate.resolve()),
                 '--output', str(arguments.output.resolve())]

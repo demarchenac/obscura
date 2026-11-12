@@ -1,0 +1,76 @@
+name: Profile retained SVG diagnostic binaries
+
+on:
+  push:
+    branches: [diagnostics/svg-native-profile]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  profile:
+    if: github.repository == 'demarchenac/obscura'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cache-mode: warm
+            scenario: table-rows-hot
+          - cache-mode: cold
+            scenario: html-parse-depth-128
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: 74b4bec959117b9da309f113bb2b08aea39539ac
+          path: trusted-base
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          run-id: 43300705646
+          github-token: ${{ github.token }}
+          pattern: svg-${{ matrix.cache-mode }}-*
+          path: binaries
+      - name: Install sampling tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends linux-tools-generic
+          sudo sysctl kernel.perf_event_paranoid=-1
+      - name: Replay the failing scenario without rebuilding
+        id: comparison
+        continue-on-error: true
+        env:
+          CACHE_MODE: ${{ matrix.cache-mode }}
+          SCENARIO: ${{ matrix.scenario }}
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/diagnostics/svg_compare.py \
+            --artifacts binaries --cache-mode "$CACHE_MODE" \
+            --evaluator trusted-base/scripts/ci/perf_smoke.py \
+            --scenario "$SCENARIO" --focused-only --output reports
+      - name: Sample native CPU and V8 separately from the timed comparisons
+        env:
+          CACHE_MODE: ${{ matrix.cache-mode }}
+          SCENARIO: ${{ matrix.scenario }}
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/diagnostics/svg_profile.py \
+            --artifacts binaries --cache-mode "$CACHE_MODE" \
+            --evaluator trusted-base/scripts/ci/perf_smoke.py \
+            --scenario "$SCENARIO" --output reports/profiles
+      - name: Preserve every comparison and profile, including failures
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: svg-profile-${{ matrix.cache-mode }}-${{ matrix.scenario }}
+          path: reports/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Retain the comparison failure status
+        if: always()
+        env:
+          COMPARISON: ${{ steps.comparison.outcome }}
+        run: test "$COMPARISON" = success

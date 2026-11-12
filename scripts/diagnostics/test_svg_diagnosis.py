@@ -10,9 +10,20 @@ from unittest.mock import patch
 
 import svg_compare
 import svg_capture
+import svg_profile
 
 
 class DiagnosticEvidenceTests(unittest.TestCase):
+    def test_profile_worker_rejects_incorrect_evaluations(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            configuration = Path(temporary) / 'case.json'
+            configuration.write_text(json.dumps({
+                'command': [sys.executable, '-c', 'print(2)'],
+                'expected': 3, 'repetitions': 1,
+            }))
+            with self.assertRaisesRegex(RuntimeError, 'evaluation failed'):
+                svg_profile.run_worker(configuration)
+
     def test_missing_optional_metadata_tool_is_recorded(self):
         result = svg_capture.command(['obscura-diagnostic-nonexistent-tool'], Path.cwd())
         self.assertEqual(result['exit'], 127)
@@ -43,7 +54,7 @@ class DiagnosticEvidenceTests(unittest.TestCase):
     def test_budget_failure_does_not_skip_remaining_comparisons(self):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary)
-            arguments = argparse.Namespace(obstacles=Path('obstacles.py'))
+            arguments = argparse.Namespace(obstacles=Path('obstacles.py'), focused_only=False)
             binaries = {f'{label}_{phase}': Path(f'{label}_{phase}')
                         for label in ('base', 'candidate') for phase in ('before', 'after')}
             def failed_benchmark(arguments, output, name, *binaries, **options):

@@ -39,3 +39,20 @@ same runner configuration before attributing it to SVG normalization.
 Helpers use only Python's standard library. `svg_table.py` imports the frozen
 base evaluator and changes only scenario selection and sample count; its
 measurement function, fixture, correctness check, and budgets remain intact.
+
+## Retained-binary follow-up
+
+The `diagnostics/svg-native-profile` branch replays the warm `table-rows-hot`
+failure and the cold `html-parse-depth-128` failure from run `43300705646`.
+Its workflow downloads those same executables, verifies their hashes, and
+compares all before/after combinations plus A/A with 50 alternating rounds.
+This focused replay omits the obstacle-course warm-up and full smoke suite;
+the original run retains both. Every replay result is preserved.
+
+After timing, separate profile invocations collect user-CPU samples with Linux
+perf and V8 logs for all four executables. Profiling adds instrumentation and
+repeats the original expression in fresh processes; its timings are not gate
+measurements. The profiler validates every evaluation result. Raw perf data,
+native symbol reports, JIT maps, and V8 logs are retained. Node's V8 log
+processor may report a version mismatch; retain the raw logs for a matching
+processor rather than treating its summary as authoritative.

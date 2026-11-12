@@ -43,6 +43,7 @@ def benchmark(arguments, output, name, base, candidate, full=False):
     if not full:
         command.extend([str(Path(__file__).with_name('svg_table.py')),
                         '--evaluator', str(arguments.evaluator),
+                        '--scenario', arguments.scenario,
                         '--rounds', str(arguments.rounds)])
     if full:
         command.append(str(arguments.evaluator))
@@ -53,15 +54,16 @@ def benchmark(arguments, output, name, base, candidate, full=False):
 
 def compare(arguments, output, binaries):
     results = []
-    # Original performance-job order: base obstacles first, then candidate.
-    for label, binary in (('base', binaries['base_before']),
-                          ('candidate', binaries['candidate_after'])):
-        process_environment = dict(os.environ, OBSCURA_BIN=str(binary))
-        results.append(run_command(
-            [sys.executable, str(arguments.obstacles), '--json', '--runs', '3', '--warmup', '1'],
-            output, f'obstacles-{label}', process_environment))
-    results.append(benchmark(arguments, output, 'full-original-order',
-                             binaries['base_before'], binaries['candidate_after'], full=True))
+    if not arguments.focused_only:
+        # Original performance-job order: base obstacles first, then candidate.
+        for label, binary in (('base', binaries['base_before']),
+                              ('candidate', binaries['candidate_after'])):
+            process_environment = dict(os.environ, OBSCURA_BIN=str(binary))
+            results.append(run_command(
+                [sys.executable, str(arguments.obstacles), '--json', '--runs', '3', '--warmup', '1'],
+                output, f'obstacles-{label}', process_environment))
+        results.append(benchmark(arguments, output, 'full-original-order',
+                                 binaries['base_before'], binaries['candidate_after'], full=True))
     comparisons = (
         ('aa-base', 'base_before', 'base_before'),
         ('aa-candidate', 'candidate_after', 'candidate_after'),
@@ -84,12 +86,16 @@ def main():
     parser.add_argument('--artifacts', type=Path, required=True)
     parser.add_argument('--cache-mode', choices=('cold', 'warm'), required=True)
     parser.add_argument('--evaluator', type=Path, required=True)
-    parser.add_argument('--obstacles', type=Path, required=True)
+    parser.add_argument('--obstacles', type=Path)
+    parser.add_argument('--focused-only', action='store_true')
+    parser.add_argument('--scenario', default='table-rows-hot')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--rounds', type=int, default=50)
     arguments = parser.parse_args()
     if arguments.rounds < 1:
         parser.error('--rounds must be positive')
+    if not arguments.focused_only and arguments.obstacles is None:
+        parser.error('--obstacles is required unless --focused-only is set')
     output = arguments.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     binaries = {}
@@ -101,6 +107,7 @@ def main():
             binaries[f'{label}_{phase}'] = retained_binary(directory, phase)
     provenance = environment(arguments.evaluator.resolve().parents[2])
     provenance.update({'tests_exit': tests, 'rounds': arguments.rounds,
+                       'scenario': arguments.scenario, 'focused_only': arguments.focused_only,
                        'binary_sha256': {name: hashlib.sha256(binary.read_bytes()).hexdigest()
                                          for name, binary in binaries.items()}})
     (output / 'environment.json').write_text(json.dumps(provenance, indent=2) + '\n')
