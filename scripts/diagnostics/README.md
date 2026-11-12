@@ -56,3 +56,9 @@ measurements. The profiler validates every evaluation result. Raw perf data,
 native symbol reports, JIT maps, and V8 logs are retained. Node's V8 log
 processor may report a version mismatch; retain the raw logs for a matching
 processor rather than treating its summary as authoritative.
+
+When reprocessing `native.data`, include runtime worker threads:
+`perf report --stdio --no-children --sort=dso,symbol -i native.data`.
+The initial run's `--comms=obscura` summaries omit those threads; raw data is
+complete. The corrected profiler removes this filter. Restore the matching
+executable and JIT maps when resolving symbols.
