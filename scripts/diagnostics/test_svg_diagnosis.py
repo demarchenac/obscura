@@ -9,9 +9,14 @@ import unittest
 from unittest.mock import patch
 
 import svg_compare
+import svg_capture
 
 
 class DiagnosticEvidenceTests(unittest.TestCase):
+    def test_missing_optional_metadata_tool_is_recorded(self):
+        result = svg_capture.command(['obscura-diagnostic-nonexistent-tool'], Path.cwd())
+        self.assertEqual(result['exit'], 127)
+
     def test_rejects_modified_artifact_before_running_it(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)

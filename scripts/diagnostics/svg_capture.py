@@ -19,7 +19,10 @@ def digest(path):
 
 
 def command(arguments, source):
-    result = subprocess.run(arguments, cwd=source, capture_output=True, text=True)
+    try:
+        result = subprocess.run(arguments, cwd=source, capture_output=True, text=True, timeout=60)
+    except FileNotFoundError as error:
+        return {'exit': 127, 'stdout': '', 'stderr': str(error)}
     return {'exit': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr}
 
 
