@@ -1,0 +1,128 @@
+name: Retain SVG diagnostic binaries
+
+on:
+  workflow_call:
+    inputs:
+      label:
+        type: string
+        required: true
+      revision:
+        type: string
+        required: true
+      cache-mode:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_BUILD_JOBS: "2"
+  CARGO_INCREMENTAL: "0"
+  CARGO_TERM_COLOR: always
+  OPENSSL_NO_VENDOR: "1"
+
+jobs:
+  build:
+    if: github.repository == 'demarchenac/obscura'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout diagnostic helpers
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Checkout frozen source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: h4ckf0r0day/obscura
+          ref: ${{ inputs.revision }}
+          path: source
+          persist-credentials: false
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang cmake libclang-dev libssl-dev llvm-dev pkg-config
+      - name: Install original CI toolchain
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          toolchain: 1.99.1
+      - uses: taiki-e/install-action@b20dedce73af6905cdc30d6611090c9b67557c8d # v2
+        with:
+          tool: nextest
+          fallback: none
+      - name: Seed or restore this run's dependency cache
+        id: cache
+        if: inputs.cache-mode == 'warm' || inputs.label == 'base'
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          prefix-key: svg-native-${{ github.run_id }}-${{ github.run_attempt }}
+          shared-key: svg-native-diagnostic
+          workspaces: source -> target
+          cache-bin: false
+          save-if: ${{ inputs.cache-mode == 'cold' && inputs.label == 'base' }}
+      - name: Require the declared cache condition
+        env:
+          CACHE_MODE: ${{ inputs.cache-mode }}
+          CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
+        run: |
+          if [[ "$CACHE_MODE" == warm ]]; then
+            test "$CACHE_HIT" = true
+          else
+            test "$CACHE_HIT" != true
+            test ! -d source/target
+          fi
+      - name: Record environment and repair V8 as in original CI
+        run: |
+          mkdir -p evidence
+          python3 scripts/diagnostics/svg_capture.py source evidence environment
+          cd source
+          if [[ ! -s target/release/gn_out/obj/librusty_v8.a ]]; then
+            rm -f -- target/release/gn_out/obj/librusty_v8.a target/release/gn_out/obj/librusty_v8.sum
+            cargo clean --release -p v8
+          fi
+      - name: Build the ordinary CLI
+        id: build
+        working-directory: source
+        run: |
+          set -o pipefail
+          cargo build --release -p obscura-cli --bins --features render 2>&1 | tee ../evidence/build.log
+      - name: Preserve binary before workspace tests
+        run: python3 scripts/diagnostics/svg_capture.py source evidence before
+      - name: Run the original workspace test command
+        id: tests
+        continue-on-error: true
+        working-directory: source
+        run: |
+          set +e
+          set -o pipefail
+          cargo nextest run --release --features render --no-fail-fast 2>&1 | tee ../evidence/nextest.log
+          test_status=${PIPESTATUS[0]}
+          printf '%s\n' "$test_status" > ../evidence/nextest-exit.txt
+          exit "$test_status"
+      - name: Preserve the exact CLI left by nextest
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: python3 scripts/diagnostics/svg_capture.py source evidence after
+      - name: Explain the diagnostic test result
+        if: always()
+        env:
+          LABEL: ${{ inputs.label }}
+          CACHE_MODE: ${{ inputs.cache-mode }}
+          TEST_OUTCOME: ${{ steps.tests.outcome }}
+        run: |
+          printf '### %s / %s\n\nWorkspace tests: **%s**. This diagnostic retains failed-test evidence; it is not a passing upstream quality gate.\n\n' \
+            "$CACHE_MODE" "$LABEL" "$TEST_OUTCOME" >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve binaries, snapshots, hashes, and build logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: svg-${{ inputs.cache-mode }}-${{ inputs.label }}
+          path: evidence/
+          include-hidden-files: true
+          if-no-files-found: error
+          compression-level: 1
+          retention-days: 30

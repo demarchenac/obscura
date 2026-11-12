@@ -1,0 +1,87 @@
+name: SVG native CI diagnosis
+
+on:
+  push:
+    branches: [diagnostics/svg-native-ci]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cold:
+    if: github.repository == 'demarchenac/obscura'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: base
+            revision: 74b4bec959117b9da309f113bb2b08aea39539ac
+          - label: candidate
+            revision: e90e0f3afb26bf5caa0407c23f9eeb5290e0deaf
+    uses: ./.github/workflows/svg-diagnostic-build.yml
+    with:
+      label: ${{ matrix.label }}
+      revision: ${{ matrix.revision }}
+      cache-mode: cold
+
+  warm:
+    needs: cold
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: base
+            revision: 74b4bec959117b9da309f113bb2b08aea39539ac
+          - label: candidate
+            revision: e90e0f3afb26bf5caa0407c23f9eeb5290e0deaf
+    uses: ./.github/workflows/svg-diagnostic-build.yml
+    with:
+      label: ${{ matrix.label }}
+      revision: ${{ matrix.revision }}
+      cache-mode: warm
+
+  compare:
+    needs: [cold, warm]
+    strategy:
+      fail-fast: false
+      matrix:
+        cache-mode: [cold, warm]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: h4ckf0r0day/obscura
+          ref: 74b4bec959117b9da309f113bb2b08aea39539ac
+          path: trusted-base
+          persist-credentials: false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: h4ckf0r0day/obscura-benchmark
+          ref: 2d08d9a8e860e423b47209434a9fba9c75e6eee6
+          path: benchmark
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: svg-${{ matrix.cache-mode }}-*
+          path: binaries
+      - name: Compare retained binaries on one idle runner
+        env:
+          CACHE_MODE: ${{ matrix.cache-mode }}
+        run: |
+          python3 scripts/diagnostics/svg_compare.py \
+            --artifacts binaries --cache-mode "$CACHE_MODE" \
+            --evaluator trusted-base/scripts/ci/perf_smoke.py \
+            --obstacles benchmark/obstacle-course/run.py --output reports
+      - name: Preserve every sample and failure
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: svg-comparison-${{ matrix.cache-mode }}
+          path: reports/
+          if-no-files-found: error
+          retention-days: 30
